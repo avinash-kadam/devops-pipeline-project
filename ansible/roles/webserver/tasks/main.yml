@@ -1,0 +1,36 @@
+---
+# Role: webserver
+# Pulls the Docker image and runs the app container
+
+- name: Pull the latest app image from Docker Hub
+  community.docker.docker_image:
+    name: "{{ docker_image }}:{{ app_version }}"
+    source: pull
+    force_source: true
+
+- name: Stop and remove any existing container
+  community.docker.docker_container:
+    name: devops-demo-app
+    state: absent
+  ignore_errors: true   # ok if container doesn't exist yet
+
+- name: Run the app container
+  community.docker.docker_container:
+    name: devops-demo-app
+    image: "{{ docker_image }}:{{ app_version }}"
+    state: started
+    restart_policy: unless-stopped
+    ports:
+      - "80:5000"     # expose on port 80 externally
+    env:
+      APP_ENV: "{{ app_env }}"
+      APP_VERSION: "{{ app_version }}"
+
+- name: Wait for app to be healthy
+  uri:
+    url: "http://localhost/health"
+    status_code: 200
+  register: health_result
+  until: health_result.status == 200
+  retries: 5
+  delay: 10

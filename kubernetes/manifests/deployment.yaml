@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: devops-demo-app
+  namespace: default
+  labels:
+    app: devops-demo-app
+    version: "IMAGE_TAG"    # Jenkins replaces this with the actual build number via sed
+spec:
+  replicas: 2               # 2 pods — if one crashes, the other stays up
+  selector:
+    matchLabels:
+      app: devops-demo-app
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1           # one extra pod during deployment
+      maxUnavailable: 0     # zero downtime — never kill old pod before new one is ready
+  template:
+    metadata:
+      labels:
+        app: devops-demo-app
+    spec:
+      containers:
+        - name: app
+          image: yourdockerhubuser/devops-demo-app:IMAGE_TAG
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 5000
+          env:
+            - name: APP_ENV
+              value: "production"
+            - name: APP_VERSION
+              value: "IMAGE_TAG"
+          # Liveness probe — if this fails, k8s restarts the pod
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          # Readiness probe — pod only receives traffic once this passes
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "100m"
+            limits:
+              memory: "128Mi"
+              cpu: "250m"

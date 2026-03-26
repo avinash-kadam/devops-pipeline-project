@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: devops-demo-app-svc
+  namespace: default
+spec:
+  selector:
+    app: devops-demo-app    # routes traffic to pods with this label
+  ports:
+    - protocol: TCP
+      port: 80              # external port
+      targetPort: 5000      # container port
+  # NodePort makes the app accessible from outside the cluster without a load balancer
+  # Use LoadBalancer type when running on EKS/GKE/AKS
+  type: NodePort

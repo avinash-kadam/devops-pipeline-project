@@ -1,0 +1,37 @@
+---
+# Role: docker
+# Installs Docker engine on Amazon Linux 2 / RHEL-based systems
+# For Ubuntu, swap `yum` with `apt` and adjust package names
+
+- name: Install required system packages
+  yum:
+    name:
+      - yum-utils
+      - device-mapper-persistent-data
+      - lvm2
+    state: present
+
+- name: Add Docker CE repository
+  command: yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+  args:
+    creates: /etc/yum.repos.d/docker-ce.repo
+
+- name: Install Docker CE
+  yum:
+    name:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+    state: latest
+
+- name: Start and enable Docker service
+  systemd:
+    name: docker
+    state: started
+    enabled: true
+
+- name: Add ec2-user to docker group (so we don't need sudo for docker commands)
+  user:
+    name: ec2-user
+    groups: docker
+    append: true

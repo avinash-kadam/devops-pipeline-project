@@ -1,0 +1,18 @@
+---
+# Main provisioning playbook
+# Runs all roles in sequence: install Docker → configure system → deploy app
+# Usage: ansible-playbook -i inventory/hosts.ini playbooks/provision.yml
+
+- name: Provision and configure app server
+  hosts: webservers
+  become: true   # sudo access needed for package installs
+
+  vars:
+    app_version: "latest"         # overridden by Jenkins --extra-vars
+    docker_image: "yourdockerhubuser/devops-demo-app"
+    app_port: 5000
+    app_env: "production"
+
+  roles:
+    - docker        # Install Docker engine
+    - webserver     # Configure the server and deploy the app

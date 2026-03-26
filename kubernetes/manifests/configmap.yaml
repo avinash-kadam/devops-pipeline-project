@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: devops-demo-app-config
+  namespace: default
+data:
+  # Non-sensitive config values go here
+  # Sensitive values (passwords, tokens) go in Secrets, not ConfigMaps
+  APP_ENV: "production"
+  PORT: "5000"

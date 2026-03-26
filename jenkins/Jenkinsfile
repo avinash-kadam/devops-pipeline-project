@@ -1,0 +1,115 @@
+pipeline {
+    agent any
+
+    // These are set in Jenkins > Manage Jenkins > Credentials
+    environment {
+        DOCKER_HUB_CREDS = credentials('dockerhub-credentials')
+        DOCKER_IMAGE     = "yourdockerhubuser/devops-demo-app"
+        APP_VERSION      = "${env.BUILD_NUMBER}"
+        KUBECONFIG_FILE  = credentials('kubeconfig')
+    }
+
+    options {
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+        timestamps()
+        timeout(time: 20, unit: 'MINUTES')
+    }
+
+    stages {
+
+        stage('Checkout') {
+            steps {
+                // Jenkins pulls from whichever branch triggered the webhook
+                checkout scm
+                echo "Building branch: ${env.BRANCH_NAME}, build #${env.BUILD_NUMBER}"
+            }
+        }
+
+        stage('Install & Test') {
+            steps {
+                dir('app') {
+                    sh '''
+                        python3 -m venv venv
+                        . venv/bin/activate
+                        pip install -r requirements.txt
+                        pytest tests/ -v --cov=app --cov-report=xml --cov-report=term
+                    '''
+                }
+            }
+            post {
+                always {
+                    // Publish test coverage report in Jenkins UI
+                    junit allowEmptyResults: true, testResults: 'app/test-results/*.xml'
+                }
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                sh """
+                    docker build \
+                        -t ${DOCKER_IMAGE}:${APP_VERSION} \
+                        -t ${DOCKER_IMAGE}:latest \
+                        -f docker/Dockerfile ./app
+                """
+            }
+        }
+
+        stage('Push to Docker Hub') {
+            steps {
+                sh """
+                    echo ${DOCKER_HUB_CREDS_PSW} | docker login -u ${DOCKER_HUB_CREDS_USR} --password-stdin
+                    docker push ${DOCKER_IMAGE}:${APP_VERSION}
+                    docker push ${DOCKER_IMAGE}:latest
+                    docker logout
+                """
+            }
+        }
+
+        stage('Provision with Ansible') {
+            // Only run Ansible on pushes to main (infra changes are deliberate)
+            when {
+                branch 'main'
+            }
+            steps {
+                dir('ansible') {
+                    sh """
+                        ansible-playbook -i inventory/hosts.ini \
+                            playbooks/provision.yml \
+                            --extra-vars "app_version=${APP_VERSION}"
+                    """
+                }
+            }
+        }
+
+        stage('Deploy to Kubernetes') {
+            when {
+                branch 'main'
+            }
+            steps {
+                withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
+                    sh """
+                        # Swap the image tag in the deployment manifest, then apply
+                        sed -i 's|IMAGE_TAG|${APP_VERSION}|g' kubernetes/manifests/deployment.yaml
+                        kubectl apply -f kubernetes/manifests/
+                        kubectl rollout status deployment/devops-demo-app --timeout=120s
+                    """
+                }
+            }
+        }
+
+    }
+
+    post {
+        success {
+            echo "Pipeline completed. App version ${APP_VERSION} is live."
+        }
+        failure {
+            echo "Pipeline failed at stage: ${env.STAGE_NAME}. Check logs above."
+        }
+        always {
+            // Clean up dangling Docker images to save disk space on the agent
+            sh 'docker image prune -f || true'
+        }
+    }
+}
